@@ -66,15 +66,19 @@ def serve():
                 if body:
                     write_chunk(body[:100])
                 time.sleep(0.01)
-                for offset in range(100, len(body), 4096):
-                    write_chunk(body[offset:offset + 4096])
+                chunks = [body[offset:offset + 4096] for offset in range(100, len(body), 4096)]
+                for chunk in chunks[:-1]:
+                    write_chunk(chunk)
                     time.sleep(0.001)
-                if self.path == "/no-length":
-                    self.wfile.write(b"0\r\n\r\n")
-                    self.wfile.flush()
+                # Synchronize final delivery and accounting with the next handler.
+                # Handler cleanup after delivery is not an overlapping download.
                 with lock:
+                    if chunks:
+                        write_chunk(chunks[-1])
+                    if self.path == "/no-length":
+                        self.wfile.write(b"0\r\n\r\n")
+                        self.wfile.flush()
                     state["sizes"].append(len(body))
-                    # Mark completion before EOF becomes visible to the next request.
                     state["active"] -= 1
             except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
                 with lock:
